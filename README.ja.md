@@ -32,9 +32,13 @@ Rokid Glasses の**カメラ映像とグラス表示をリアルタイムに合�
 ## 前提
 
 - macOS 14 以降
-- `scrcpy`（Homebrew）、`ffmpeg`（音声の多重化に使用）
-- Android SDK platform-tools の `adb`
+- `scrcpy` — 3.3.1 で確認。`--video-source=camera` を使うので、古いビルドでは動かないことがある
+- `ffmpeg` — 録画に音声を多重化するのに使う
+- `adb` — Android SDK platform-tools のもの、または `brew install --cask android-platform-tools`
 - **画面収録の許可**（システム設定 → プライバシーとセキュリティ → 画面収録）
+
+グラスは firmware 1.21 で確認。3 つの実行ファイルは既定の場所から順に探す（[設定](#設定)の表を参照）。
+別の場所に入れている場合は `scrcpyPath` / `ffmpegPath` / `adbPath` で指定する。
 
 ## 使い方
 
@@ -92,7 +96,8 @@ defaults delete com.hacha.rokidliveview hudGain                 # 既定に戻�
 | `hudTint` | `00ff44` | HUD の単色化カラー。`none` でフルカラー |
 | `hudGain` | `1.5` | HUD の輝度ゲイン（単色化の後に掛ける） |
 | `hudDensity` | `1.0` | HUD の濃さ 0…1。HUD の場所だけ背景を暗くしてから合成する。0 で素通し重視 |
-| `scrcpyPath` / `adbPath` / `ffmpegPath` | 自動検出 | 実行ファイルの場所 |
+| `scrcpyPath` / `ffmpegPath` | `/opt/homebrew/bin` → `/usr/local/bin` | 実行ファイルの場所。先に見つかった方を使う |
+| `adbPath` | `~/Library/Android/sdk/platform-tools/adb` → 上の 2 つのディレクトリ | adb の場所。別の場所に入れている場合に指定する |
 | `outputDirectory` | `~/Movies/RokidLiveView` | 録画の保存先 |
 
 ### HUD が実機の印象より薄いとき
@@ -124,15 +129,15 @@ defaults write com.hacha.rokidliveview hudDensity -float 0.0   # 素通し重視
 
 ### adb サーバの奪い合いで scrcpy が落ちることがある
 
-Unity（6.x）は独自の adb（36.0.0）を同梱していて、platform-tools（34.0.4）が動かしている
-adb サーバを掴み直すことがある。その瞬間 scrcpy は
+独自の adb を同梱するツール（IDE、ゲームエンジン、各種 Android ツール）は、動いている adb サーバと
+バージョンが違うとサーバを掴み直す。その瞬間 scrcpy は
 `could not install *smartsocket* listener: Address already in use` で起動失敗し、
 グラスが一時的に `adb devices` から消える。
 
 - アプリ側は scrcpy の停止を検知して自動再起動し、**キャプチャも繋ぎ直す**（最大 5 回）。
   再起動後のウィンドウは windowID が変わるため、繋ぎ直さないと映像が最後のフレームで固まる。
   `--selftest` はこの復帰まで自動で確認する
-- **デモ前に Unity を閉じておくのが確実**
+- **デモ前に adb を触る他のツールを閉じておくのが確実**
 - `adb kill-server` はしないこと（scrcpy などを巻き添えにする）。数秒待てば復帰する
 - どうしても同居させたい場合は無線 adb（`adb tcpip 5555` → `adb connect <ip>:5555`）にすると、
   TCP 経由なので複数の adb サーバから並行して掴める

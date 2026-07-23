@@ -32,9 +32,14 @@ Treat it as a communication tool for demos and recordings, not as a measurement.
 ## Requirements
 
 - macOS 14 or later
-- `scrcpy` (Homebrew) and `ffmpeg` (used to mux the audio)
-- `adb` from the Android SDK platform-tools
+- `scrcpy` — tested with 3.3.1. The app needs `--video-source=camera`, which older builds may lack
+- `ffmpeg` — used to mux the audio into the recording
+- `adb` — from the Android SDK platform-tools, or `brew install --cask android-platform-tools`
 - **Screen Recording permission** (System Settings → Privacy & Security → Screen Recording)
+
+Verified against Rokid Glasses firmware 1.21. The three executables are looked up at their usual
+locations (see the table under [Configuration](#configuration)); if yours live somewhere else, point
+at them with `scrcpyPath` / `ffmpegPath` / `adbPath`.
 
 ## Usage
 
@@ -92,7 +97,8 @@ defaults delete com.hacha.rokidliveview hudGain                 # back to the de
 | `hudTint` | `00ff44` | HUD tint color. `none` keeps the original colors |
 | `hudGain` | `1.5` | HUD brightness gain, applied after tinting |
 | `hudDensity` | `1.0` | HUD density, 0…1. Darkens the background under the HUD before blending. 0 favors see-through |
-| `scrcpyPath` / `adbPath` / `ffmpegPath` | auto-detected | Executable locations |
+| `scrcpyPath` / `ffmpegPath` | `/opt/homebrew/bin`, then `/usr/local/bin` | Executable locations. The first one that exists wins |
+| `adbPath` | `~/Library/Android/sdk/platform-tools/adb`, then the two directories above | Executable location for adb. Set this when adb is installed somewhere else |
 | `outputDirectory` | `~/Movies/RokidLiveView` | Where recordings go |
 
 ### When the HUD looks fainter than the real thing
@@ -128,15 +134,15 @@ defaults write com.hacha.rokidliveview hudDensity -float 0.0   # physically see-
 
 ### scrcpy can die when adb servers fight over the device
 
-Unity (6.x) bundles its own adb (36.0.0) and will take over the adb server that platform-tools
-(34.0.4) is running. At that moment scrcpy fails to start with
-`could not install *smartsocket* listener: Address already in use`, and the glasses briefly
-disappear from `adb devices`.
+Other tools that bundle their own adb — IDEs, game engines, Android tooling — take over the adb
+server when their version differs from the one already running. At that moment scrcpy fails to
+start with `could not install *smartsocket* listener: Address already in use`, and the glasses
+briefly disappear from `adb devices`.
 
 - The app detects the scrcpy exit, restarts it, and **re-attaches the capture** (up to 5 times).
   The restarted window gets a new windowID, so without re-attaching, the video would freeze on the
   last frame. `--selftest` verifies this recovery automatically
-- **Closing Unity before a demo is the reliable fix**
+- **Quitting anything else that talks to adb before a demo is the reliable fix**
 - Do not run `adb kill-server` — it takes scrcpy and friends down with it. Wait a few seconds and
   it recovers on its own
 - If they must coexist, switch to wireless adb (`adb tcpip 5555` → `adb connect <ip>:5555`); over

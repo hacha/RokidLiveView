@@ -37,7 +37,7 @@ final class ScrcpyController: ObservableObject {
     private var stopping = false
 
     /// scrcpy が予期せず落ちたときの再起動上限。
-    /// このマシンでは Unity 同梱 adb と platform-tools adb が adb サーバを奪い合い、
+    /// 別の adb を同梱するツールが動いていると adb サーバの主導権を奪い合い、
     /// その巻き添えで scrcpy が起動失敗/切断することがあるため自動復帰させる。
     private let maxRestarts = 5
 
@@ -47,9 +47,14 @@ final class ScrcpyController: ObservableObject {
             lastError = "scrcpy not found at \(Config.scrcpyPath)"
             return
         }
+        guard FileManager.default.isExecutableFile(atPath: Config.adbPath) else {
+            lastError = "adb not found at \(Config.adbPath). Point at it with "
+                + "defaults write com.hacha.rokidliveview adbPath -string <path>"
+            return
+        }
         guard !Config.serial.isEmpty else {
-            lastError = "No glasses found. Connect them over adb, or set the serial with "
-                + "defaults write com.hacha.rokidliveview serial -string <serial>"
+            lastError = "No glasses found via \(Config.adbPath). Connect them, or set the serial "
+                + "with defaults write com.hacha.rokidliveview serial -string <serial>"
             return
         }
         stopping = false
@@ -149,7 +154,7 @@ final class ScrcpyController: ObservableObject {
         process.arguments = arguments
 
         // Finder から起動した .app の PATH には Homebrew も platform-tools も入らないので明示注入する。
-        // ADB を固定しないと Unity 同梱の adb を掴んでサーバを奪い合うことがある。
+        // ADB を固定しないと、PATH 上の別の adb を掴んでサーバを奪い合うことがある。
         var environment = ProcessInfo.processInfo.environment
         let adbDirectory = (Config.adbPath as NSString).deletingLastPathComponent
         environment["PATH"] = "\(adbDirectory):/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin"

@@ -75,28 +75,32 @@ enum Config {
     /// カメラ映像の回転。RG-glasses FW 1.21 実測でカメラは横向きに出るため 270 で正立させる
     static let cameraOrientation = string("cameraOrientation", default: "270")
 
-    static let scrcpyPath: String = {
-        if let override = UserDefaults.standard.string(forKey: "scrcpyPath") { return override }
-        for candidate in ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"]
+    static let scrcpyPath = executable(
+        "scrcpyPath", candidates: ["/opt/homebrew/bin/scrcpy", "/usr/local/bin/scrcpy"])
+
+    /// platform-tools を先に見る。Homebrew (android-platform-tools) 経由での導入もあるので
+    /// そちらも候補に入れる。どれも無ければ 1 番目を返し、呼び出し側で「見つからない」と案内する。
+    static let adbPath = executable("adbPath", candidates: [
+        NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
+        "/opt/homebrew/bin/adb",
+        "/usr/local/bin/adb",
+    ])
+
+    static let ffmpegPath = executable(
+        "ffmpegPath", candidates: ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"])
+
+    /// 実行ファイルの場所。UserDefaults の上書きが最優先、無ければ候補を順に探す。
+    /// .app は Finder 起動だと PATH が最小限になるので、PATH には頼らず絶対パスで持つ。
+    private static func executable(_ key: String, candidates: [String]) -> String {
+        if let override = UserDefaults.standard.string(forKey: key), !override.isEmpty {
+            return override
+        }
+        for candidate in candidates
         where FileManager.default.isExecutableFile(atPath: candidate) {
             return candidate
         }
-        return "/opt/homebrew/bin/scrcpy"
-    }()
-
-    static let adbPath: String = {
-        if let override = UserDefaults.standard.string(forKey: "adbPath") { return override }
-        return NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb"
-    }()
-
-    static let ffmpegPath: String = {
-        if let override = UserDefaults.standard.string(forKey: "ffmpegPath") { return override }
-        for candidate in ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"]
-        where FileManager.default.isExecutableFile(atPath: candidate) {
-            return candidate
-        }
-        return "/opt/homebrew/bin/ffmpeg"
-    }()
+        return candidates[0]
+    }
 
     /// 録画とスモークテストの出力先
     static let outputDirectory: URL = {

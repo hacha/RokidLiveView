@@ -53,6 +53,7 @@ at them with `scrcpyPath` / `ffmpegPath` / `adbPath`.
    - Two scrcpy windows appear (one for the display, one for the camera)
    - The status turns to *Running* and the composite shows up in the preview
 3. **Record** / **Stop Recording** writes to `~/Movies/RokidLiveView/live-*.av.mp4`
+   - Once the file is finalized, Finder opens with it selected
 4. **Full Screen** sends it to a projector or an external display
 
 ### Window placement

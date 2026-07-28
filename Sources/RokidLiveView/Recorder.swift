@@ -1,3 +1,4 @@
+import AppKit
 import AVFoundation
 import CoreImage
 import CoreMedia
@@ -15,6 +16,9 @@ final class Recorder: ObservableObject {
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var lastOutput: URL?
     @Published private(set) var lastError: String?
+
+    /// 停止して保存が確定したら Finder で保存先を開くか。selftest では邪魔なので切る
+    var revealsOutputOnStop = true
 
     /// 出力フレームレート。
     /// プレビューは 60fps で回るが、録画は固定 30fps の CFR にする
@@ -152,11 +156,23 @@ final class Recorder: ObservableObject {
             audioProcess?.waitUntilExit()
             let merged = Self.mux(video: video, audio: audio, videoStart: videoStart)
             Task { @MainActor in
-                self?.lastOutput = merged ?? video
+                guard let self else { return }
+                let output = merged ?? video
+                self.lastOutput = output
                 if merged == nil, audio != nil {
-                    self?.lastError = "Muxing the audio failed; saved video only"
+                    self.lastError = "Muxing the audio failed; saved video only"
                 }
+                if self.revealsOutputOnStop { Self.reveal(output) }
             }
+        }
+    }
+
+    /// 保存先を Finder で開く。ファイルがあればそれを選択した状態で、無ければフォルダだけ開く。
+    private static func reveal(_ output: URL?) {
+        if let output, FileManager.default.fileExists(atPath: output.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([output])
+        } else {
+            NSWorkspace.shared.open(Config.outputDirectory)
         }
     }
 

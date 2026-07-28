@@ -17,6 +17,9 @@ enum SelfTest {
             let report = Report()
             report.log("=== selftest 開始 ===")
 
+            // 無人で回すので、録画停止のたびに Finder が前に出てくるのは困る
+            engine.recorder.revealsOutputOnStop = false
+
             engine.start()
             guard await waitUntil(timeout: 40, condition: { engine.isRunning }) else {
                 report.log("FAIL: 稼働状態にならなかった (\(engine.state.message))")

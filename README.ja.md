@@ -52,6 +52,7 @@ Rokid Glasses の**カメラ映像とグラス表示をリアルタイムに合�
    - scrcpy のウィンドウが 2 枚出る（表示用・カメラ用）
    - ステータスが *Running* になり、プレビューに合成映像が出る
 3. **Record / Stop Recording** で `~/Movies/RokidLiveView/live-*.av.mp4` に保存
+   - 保存が確定すると Finder が保存先を開き、そのファイルを選択した状態になる
 4. **Full Screen** でプロジェクタや外部ディスプレイへ
 
 ### ウィンドウ配置のコツ

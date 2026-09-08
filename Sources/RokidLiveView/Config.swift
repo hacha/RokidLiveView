@@ -86,9 +86,6 @@ enum Config {
         "/usr/local/bin/adb",
     ])
 
-    static let ffmpegPath = executable(
-        "ffmpegPath", candidates: ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg"])
-
     /// 実行ファイルの場所。UserDefaults の上書きが最優先、無ければ候補を順に探す。
     /// .app は Finder 起動だと PATH が最小限になるので、PATH には頼らず絶対パスで持つ。
     private static func executable(_ key: String, candidates: [String]) -> String {

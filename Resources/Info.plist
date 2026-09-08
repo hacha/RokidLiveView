@@ -11,5 +11,6 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>録画に音声を含めるため、この Mac のマイク入力を使います。</string>
 </dict>
 </plist>

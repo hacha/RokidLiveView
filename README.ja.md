@@ -33,12 +33,12 @@ Rokid Glasses の**カメラ映像とグラス表示をリアルタイムに合�
 
 - macOS 14 以降
 - `scrcpy` — 3.3.1 で確認。`--video-source=camera` を使うので、古いビルドでは動かないことがある
-- `ffmpeg` — 録画に音声を多重化するのに使う
 - `adb` — Android SDK platform-tools のもの、または `brew install --cask android-platform-tools`
 - **画面収録の許可**（システム設定 → プライバシーとセキュリティ → 画面収録）
+- **マイクの許可**（システム設定 → プライバシーとセキュリティ → マイク）— 録画に音声を含める場合
 
-グラスは firmware 1.21 で確認。3 つの実行ファイルは既定の場所から順に探す（[設定](#設定)の表を参照）。
-別の場所に入れている場合は `scrcpyPath` / `ffmpegPath` / `adbPath` で指定する。
+グラスは firmware 1.21 で確認。2 つの実行ファイルは既定の場所から順に探す（[設定](#設定)の表を参照）。
+別の場所に入れている場合は `scrcpyPath` / `adbPath` で指定する。
 
 ## 使い方
 
@@ -97,7 +97,7 @@ defaults delete com.hacha.rokidliveview hudGain                 # 既定に戻�
 | `hudTint` | `00ff44` | HUD の単色化カラー。`none` でフルカラー |
 | `hudGain` | `1.5` | HUD の輝度ゲイン（単色化の後に掛ける） |
 | `hudDensity` | `1.0` | HUD の濃さ 0…1。HUD の場所だけ背景を暗くしてから合成する。0 で素通し重視 |
-| `scrcpyPath` / `ffmpegPath` | `/opt/homebrew/bin` → `/usr/local/bin` | 実行ファイルの場所。先に見つかった方を使う |
+| `scrcpyPath` | `/opt/homebrew/bin` → `/usr/local/bin` | 実行ファイルの場所。先に見つかった方を使う |
 | `adbPath` | `~/Library/Android/sdk/platform-tools/adb` → 上の 2 つのディレクトリ | adb の場所。別の場所に入れている場合に指定する |
 | `outputDirectory` | `~/Movies/RokidLiveView` | 録画の保存先 |
 
@@ -179,8 +179,12 @@ TCC の許可は「アプリの署名 + 配置場所」に紐づく。`build.sh`
 - **合成は screen（`1-(1-a)(1-b)`）で、alpha blend ではない**。黒が寄与しない＝素通し。
   そのぶん背景が明るいほど白へ潰れるので、`hudGain` と `hudDensity` で補う。
 - **録画は固定 30fps CFR**。プレビューは 60fps で回るが、実カメラが約 30fps なので重複フレームを
-  書かない。音声はグラスのマイクを scrcpy の 3 本目で別録りし、停止時に ffmpeg で多重化する
-  （起動遅れは `-itsoffset` で補正）。
+  書かない。**音声はこの Mac 自身のマイクを AVCaptureSession で拾い、映像と同じ AVAssetWriter に
+  音声トラックとして直接書き込む**。グラス側のマイクは adb/scrcpy 経由だと OS のプライバシーポリシー
+  （フォアグラウンドUIを持たないプロセスの録音は無音化される）で常に無音になり、使えないと判明した
+  ため（`RECORD_AUDIO` は allow でも `dumpsys audio` 上は `silenced:true`。競合アプリを止めても
+  変わらず、`--audio-source=playback` はこの端末の Android 12 では非対応）。音声 PTS はホストクロック
+  を最初の映像フレームの時刻基準に詰め直して書くので、別プロセスでの `-itsoffset` 補正は不要。
 
 ## 注記
 

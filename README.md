@@ -33,13 +33,13 @@ Treat it as a communication tool for demos and recordings, not as a measurement.
 
 - macOS 14 or later
 - `scrcpy` — tested with 3.3.1. The app needs `--video-source=camera`, which older builds may lack
-- `ffmpeg` — used to mux the audio into the recording
 - `adb` — from the Android SDK platform-tools, or `brew install --cask android-platform-tools`
 - **Screen Recording permission** (System Settings → Privacy & Security → Screen Recording)
+- **Microphone permission** (System Settings → Privacy & Security → Microphone) — for audio in recordings
 
-Verified against Rokid Glasses firmware 1.21. The three executables are looked up at their usual
+Verified against Rokid Glasses firmware 1.21. The two executables are looked up at their usual
 locations (see the table under [Configuration](#configuration)); if yours live somewhere else, point
-at them with `scrcpyPath` / `ffmpegPath` / `adbPath`.
+at them with `scrcpyPath` / `adbPath`.
 
 ## Usage
 
@@ -98,7 +98,7 @@ defaults delete com.hacha.rokidliveview hudGain                 # back to the de
 | `hudTint` | `00ff44` | HUD tint color. `none` keeps the original colors |
 | `hudGain` | `1.5` | HUD brightness gain, applied after tinting |
 | `hudDensity` | `1.0` | HUD density, 0…1. Darkens the background under the HUD before blending. 0 favors see-through |
-| `scrcpyPath` / `ffmpegPath` | `/opt/homebrew/bin`, then `/usr/local/bin` | Executable locations. The first one that exists wins |
+| `scrcpyPath` | `/opt/homebrew/bin`, then `/usr/local/bin` | Executable location. The first one that exists wins |
 | `adbPath` | `~/Library/Android/sdk/platform-tools/adb`, then the two directories above | Executable location for adb. Set this when adb is installed somewhere else |
 | `outputDirectory` | `~/Movies/RokidLiveView` | Where recordings go |
 
@@ -186,9 +186,14 @@ in [Config.swift](Sources/RokidLiveView/Config.swift) — at the cost of screen 
   nothing, which is what makes it see-through. The flip side is that bright backgrounds crush
   toward white — `hudGain` and `hudDensity` exist to compensate.
 - **Recording is fixed 30fps CFR.** The preview runs at 60fps, but the real camera is around 30fps
-  so duplicate frames are never written. Audio is captured separately by a third scrcpy process
-  (the glasses mic) and muxed in with ffmpeg on stop, with the startup delay corrected via
-  `-itsoffset`.
+  so duplicate frames are never written. **Audio comes from this Mac's own microphone**, captured
+  with an `AVCaptureSession` and written straight into the same `AVAssetWriter` as an audio track.
+  The glasses' own mic turned out to be unusable over adb/scrcpy: the OS silences recordings from
+  any process without a foreground UI (`RECORD_AUDIO` shows `allow` in `appops`, but `dumpsys audio`
+  still reports `silenced:true`; killing competing apps made no difference, and
+  `--audio-source=playback` needs Android 13+, which this firmware predates). Audio timestamps are
+  rebased onto the host clock at the first video frame, so no separate `-itsoffset` correction is
+  needed.
 
 ## Notes
 

@@ -124,26 +124,6 @@ final class ScrcpyController: ObservableObject {
         }
     }
 
-    /// 録画用の音声だけを取る scrcpy。映像もウィンドウも持たない。
-    static func startAudioRecorder(to url: URL) -> Process? {
-        let arguments = [
-            "-s", Config.serial,
-            "--no-video",
-            "--no-control",
-            "--audio-source=mic",
-            // scrcpy の既定は opus。mp4 に入れると QuickTime で再生できないので aac にする
-            "--audio-codec=aac",
-            "--record=\(url.path)",
-        ]
-        let process = makeProcessStatic(arguments: arguments)
-        do {
-            try process.run()
-            return process
-        } catch {
-            return nil
-        }
-    }
-
     private func makeProcess(arguments: [String]) -> Process {
         Self.makeProcessStatic(arguments: arguments)
     }

@@ -31,6 +31,7 @@ final class LiveEngine: ObservableObject {
 
     let scrcpy = ScrcpyController()
     let recorder = Recorder()
+    private lazy var windowMover = WindowMover(scrcpy: scrcpy)
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let compositor: Compositor
@@ -78,6 +79,7 @@ final class LiveEngine: ObservableObject {
             state = .failed(error)
             return
         }
+        windowMover.start()
 
         startTask = Task { [weak self] in
             guard let self else { return }
@@ -139,6 +141,7 @@ final class LiveEngine: ObservableObject {
         rebindTask?.cancel()
         rebindTask = nil
         scrcpy.onRelaunch = nil
+        windowMover.stop()
         if recorder.isRecording { recorder.stop() }
         cameraSource.stop()
         displaySource.stop()

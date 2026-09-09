@@ -61,6 +61,11 @@ at them with `scrcpyPath` / `adbPath`.
 **Do not minimize the two scrcpy windows.** Capture holds at roughly 30fps even when they are
 fully covered by other windows (measured), but minimizing them stops the frames.
 
+The two windows launch with `--window-borderless`, so they have no title bar and can't be
+dragged the normal way. **Hold Option and drag anywhere on a window** to move it (via the
+Accessibility API; the first time, grant access under System Settings > Privacy & Security >
+Accessibility).
+
 For projector use, the natural split is "laptop screen = the two scrcpy windows + the controls"
 and "external display = preview in full screen". In Zoom, share the preview window.
 

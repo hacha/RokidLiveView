@@ -65,6 +65,11 @@ final class ScrcpyController: ObservableObject {
         launch(.camera)
     }
 
+    /// WindowMover が AX でウィンドウを掴むために使う。
+    func processIdentifier(for kind: Kind) -> pid_t? {
+        processes[kind]?.processIdentifier
+    }
+
     func stop() {
         stopping = true
         isRunning = false

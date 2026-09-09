@@ -37,17 +37,19 @@ enum Config {
             line.split(whereSeparator: \.isWhitespace).first.map(String.init)
         }
         // RG-glasses は model:RG_glasses / product:glasses として現れる (実機確認)
-        if let glasses = online.first(where: { $0.contains("model:RG_glasses") || $0.contains("product:glasses") }) {
+        if let glasses = online.first(where: {
+            $0.contains("model:RG_glasses") || $0.contains("product:glasses")
+        }) {
             return serial(of: glasses)
         }
         return online.count == 1 ? serial(of: online[0]) : nil
     }
 
     /// HUD の高さ / 出力の高さ
-    static let hudFrac = double("hudFrac", default: 0.40)
+    static let hudFrac = double("hudFrac", default: 0.24)
     /// HUD 位置の中央からのオフセット px。DY は下方向が正 (ffmpeg 側の座標系に合わせる)
     static let hudDX = double("hudDX", default: 0)
-    static let hudDY = double("hudDY", default: 360)
+    static let hudDY = double("hudDY", default: 140)
     /// HUD の単色化カラー。実機は緑単色ディスプレイなのでそれを再現する。"none" でフルカラーのまま
     static let hudTint = string("hudTint", default: "00ff44")
 
@@ -56,7 +58,7 @@ enum Config {
     /// グラスのフレームバッファはもともと緑で描かれており (文字画素の平均 RGB = 80.7, 201.9, 101.0)、
     /// hue=s=0 相当の luma 変換を通すと緑の係数 0.587 のぶん暗くなる (文字の G 最大 255 → 186.2)。
     /// 255 / 186.2 ≒ 1.37 でピークが戻る。そこから上げると実機の印象に寄せて強調できる。
-    static let hudGain = double("hudGain", default: 1.5)
+    static let hudGain = double("hudGain", default: 3.5)
 
     /// HUD の濃さ (0…1)。HUD がある場所だけ背景を暗くしてから screen 合成する。
     ///
@@ -64,7 +66,7 @@ enum Config {
     /// 白に寄って緑が薄まる。ゲインを上げても白飛びが増えるだけで「濃く」はならない。
     /// そこで HUD の輝度をマスクとして背景を落とし、R と B を引いて緑を立たせる。
     /// 0 = 従来どおり素通し重視 / 1 = HUD の色で背景をほぼ置き換える。
-    static let hudDensity = double("hudDensity", default: 1)
+    static let hudDensity = double("hudDensity", default: 1.0)
 
     /// scrcpy ウィンドウの配置とサイズ (pt)。
     /// キャプチャ解像度 = このサイズ × Retina 倍率 なので、画質に直結する。
@@ -80,11 +82,13 @@ enum Config {
 
     /// platform-tools を先に見る。Homebrew (android-platform-tools) 経由での導入もあるので
     /// そちらも候補に入れる。どれも無ければ 1 番目を返し、呼び出し側で「見つからない」と案内する。
-    static let adbPath = executable("adbPath", candidates: [
-        NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
-        "/opt/homebrew/bin/adb",
-        "/usr/local/bin/adb",
-    ])
+    static let adbPath = executable(
+        "adbPath",
+        candidates: [
+            NSHomeDirectory() + "/Library/Android/sdk/platform-tools/adb",
+            "/opt/homebrew/bin/adb",
+            "/usr/local/bin/adb",
+        ])
 
     /// 実行ファイルの場所。UserDefaults の上書きが最優先、無ければ候補を順に探す。
     /// .app は Finder 起動だと PATH が最小限になるので、PATH には頼らず絶対パスで持つ。
@@ -110,7 +114,8 @@ enum Config {
     /// 出力先を作ってから返す。初回起動ではディレクトリがまだ無いので、書き込む側は必ずこちらを使う。
     @discardableResult
     static func ensureOutputDirectory() throws -> URL {
-        try FileManager.default.createDirectory(at: outputDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            at: outputDirectory, withIntermediateDirectories: true)
         return outputDirectory
     }
 

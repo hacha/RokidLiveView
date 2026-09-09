@@ -50,6 +50,10 @@ struct ContentView: View {
                 NSApp.keyWindow?.toggleFullScreen(nil)
             }
 
+            Button(engine.cameraCropEnabled ? "Full Camera" : "Cropped Camera") {
+                engine.toggleCameraCrop()
+            }
+
             Divider().frame(height: 16)
 
             VStack(alignment: .leading, spacing: 2) {

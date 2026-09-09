@@ -74,6 +74,15 @@ enum Config {
     static let displayWindow = WindowGeometry(x: 20, y: 60, width: 480, height: 640)
     static let cameraWindow = WindowGeometry(x: 520, y: 60, width: 540, height: 960)
 
+    /// カメラ映像の上下から取り除く割合 (フル高さに対する割合、上下別々)。実機カメラは
+    /// 縦解像度が高く、グラス表示部が相対的に小さく見えるので、クロップして出力解像度
+    /// 自体を下げることで表示部の見かけの比率を上げる。上下で必要な量が違うので別々に持つ。
+    static let cameraTopMargin = double("cameraTopMargin", default: 0.30)
+    static let cameraBottomMargin = double("cameraBottomMargin", default: 0.10)
+    /// カメラ映像の左右から取り除く割合 (フル幅に対する割合、片側)。左右は非対称にする理由が
+    /// 無いので共通の 1 つの値にしている。
+    static let cameraSideMargin = double("cameraSideMargin", default: 0.10)
+
     /// カメラ映像の回転。RG-glasses FW 1.21 実測でカメラは横向きに出るため 270 で正立させる
     static let cameraOrientation = string("cameraOrientation", default: "270")
 

@@ -28,6 +28,8 @@ final class LiveEngine: ObservableObject {
 
     @Published private(set) var state: State = .idle
     @Published private(set) var needsScreenRecordingPermission = false
+    /// カメラ上下クロップの有効/無効。フルサイズにしたいときにボタンで切り替える。
+    @Published private(set) var cameraCropEnabled = true
 
     let scrcpy = ScrcpyController()
     let recorder = Recorder()
@@ -147,6 +149,13 @@ final class LiveEngine: ObservableObject {
         displaySource.stop()
         scrcpy.stop()
         state = .idle
+    }
+
+    func toggleCameraCrop() {
+        cameraCropEnabled.toggle()
+        compositor.topMargin = cameraCropEnabled ? Config.cameraTopMargin : 0
+        compositor.bottomMargin = cameraCropEnabled ? Config.cameraBottomMargin : 0
+        compositor.sideMargin = cameraCropEnabled ? Config.cameraSideMargin : 0
     }
 
     func toggleRecording() {

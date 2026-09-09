@@ -59,18 +59,21 @@ final class Recorder: NSObject, ObservableObject {
 
         do {
             let writer = try AVAssetWriter(outputURL: video, fileType: .mp4)
+            // 偶数丸めは Compositor.compose() が常に行うので、ここではその結果 (size) をそのまま使う。
+            let width = Int(size.width)
+            let height = Int(size.height)
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: Int(size.width),
-                AVVideoHeightKey: Int(size.height),
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height,
             ])
             input.expectsMediaDataInRealTime = true
             let adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
                     kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                    kCVPixelBufferWidthKey as String: Int(size.width),
-                    kCVPixelBufferHeightKey as String: Int(size.height),
+                    kCVPixelBufferWidthKey as String: width,
+                    kCVPixelBufferHeightKey as String: height,
                 ]
             )
             guard writer.canAdd(input) else {

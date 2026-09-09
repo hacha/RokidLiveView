@@ -16,11 +16,14 @@ struct ContentView: View {
             MetalPreviewView(engine: engine)
                 .ignoresSafeArea()
 
-            controls
-                .padding(10)
-                .background(.black.opacity(0.55))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .padding(12)
+            VStack(alignment: .leading, spacing: 8) {
+                controls
+                cropControls
+            }
+            .padding(10)
+            .background(.black.opacity(0.55))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(12)
         }
         .frame(minWidth: 480, minHeight: 640)
         .background(Color.black)
@@ -50,10 +53,6 @@ struct ContentView: View {
                 NSApp.keyWindow?.toggleFullScreen(nil)
             }
 
-            Button(engine.cameraCropEnabled ? "Full Camera" : "Cropped Camera") {
-                engine.toggleCameraCrop()
-            }
-
             Divider().frame(height: 16)
 
             VStack(alignment: .leading, spacing: 2) {
@@ -64,6 +63,28 @@ struct ContentView: View {
             }
 
             Spacer()
+        }
+        .foregroundStyle(.white)
+    }
+
+    /// カメラのクロップ量を上下左右で調整するスライダー。全部左端 (0%) にすればフルサイズになる。
+    private var cropControls: some View {
+        HStack(spacing: 18) {
+            cropSlider("Top", value: $engine.cameraTopMargin, max: 0.40)
+            cropSlider("Bottom", value: $engine.cameraBottomMargin, max: 0.30)
+            cropSlider("Side", value: $engine.cameraSideMargin, max: 0.20)
+            Spacer()
+        }
+    }
+
+    private func cropSlider(_ label: String, value: Binding<Double>, max: Double) -> some View {
+        HStack(spacing: 6) {
+            Text(label).font(.caption2)
+            Slider(value: value, in: 0...max).frame(width: 90)
+            Text(String(format: "%.0f%%", value.wrappedValue * 100))
+                .font(.caption2)
+                .monospacedDigit()
+                .frame(width: 30, alignment: .trailing)
         }
         .foregroundStyle(.white)
     }

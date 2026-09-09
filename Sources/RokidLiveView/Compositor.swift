@@ -26,6 +26,12 @@ final class Compositor {
     var bottomMargin: Double
     var sideMargin: Double
 
+    /// 直近の compose() でのフルフレームサイズと、クロップ前にそのフレーム内でどこを切り出したか。
+    /// プレビューが Full/Crop を切り替えても拡大縮小・位置ズレなしで表示するのに使う
+    /// (Compositor.cropped() は録画用に原点を (0,0) へ正規化してしまうため、元の位置は別に持っておく必要がある)。
+    private(set) var lastFullFrameSize: CGSize?
+    private(set) var lastCropOrigin: CGPoint = .zero
+
     init(mtlCommandQueue: MTLCommandQueue) {
         ciContext = CIContext(mtlCommandQueue: mtlCommandQueue, options: [
             .workingColorSpace: NSNull(),
@@ -51,6 +57,7 @@ final class Compositor {
         guard let hudImage else { return cameraImage }
 
         let fullFrame = cameraImage.extent
+        lastFullFrameSize = fullFrame.size
         let padded = layout(hud: styled(hudImage), in: fullFrame)
 
         let blend = CIFilter.screenBlendMode()
@@ -81,6 +88,7 @@ final class Compositor {
         let width = ((maxX - minX) / 2).rounded(.down) * 2
         let height = ((maxY - minY) / 2).rounded(.down) * 2
         let rect = CGRect(x: minX, y: minY, width: width, height: height)
+        lastCropOrigin = rect.origin
 
         // cropped(to:) は extent を狭めるだけで原点は変わらない。原点が (0,0) のままだと
         // 期待した位置とみなす消費側 (Recorder.append の CVPixelBuffer 書き込みなど) がずれるので、

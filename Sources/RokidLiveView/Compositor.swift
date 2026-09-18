@@ -20,6 +20,18 @@ final class Compositor {
     private let gain: Double
     private let density: Double
 
+    /// カメラのクロップ。フルサイズに対する割合で、上下は別々・左右は共通の 1 つの値を持つ。
+    /// 全部 0 でフルサイズ。ボタンでトグルするので var にしている。
+    var topMargin: Double
+    var bottomMargin: Double
+    var sideMargin: Double
+
+    /// 直近の compose() でのフルフレームサイズと、クロップ前にそのフレーム内でどこを切り出したか。
+    /// プレビューが Full/Crop を切り替えても拡大縮小・位置ズレなしで表示するのに使う
+    /// (Compositor.cropped() は録画用に原点を (0,0) へ正規化してしまうため、元の位置は別に持っておく必要がある)。
+    private(set) var lastFullFrameSize: CGSize?
+    private(set) var lastCropOrigin: CGPoint = .zero
+
     init(mtlCommandQueue: MTLCommandQueue) {
         ciContext = CIContext(mtlCommandQueue: mtlCommandQueue, options: [
             .workingColorSpace: NSNull(),
@@ -29,9 +41,14 @@ final class Compositor {
         tint = Config.hudTintComponents
         gain = Config.hudGain
         density = min(max(Config.hudDensity, 0), 1)
+        topMargin = Config.cameraTopMargin
+        bottomMargin = Config.cameraBottomMargin
+        sideMargin = Config.cameraSideMargin
     }
 
-    /// カメラ側の解像度が出力解像度になる。カメラがまだ来ていなければ HUD 単体を返す。
+    /// 合成は常にカメラのフル解像度で行い (hudFrac/hudDY はフルフレーム基準)、
+    /// クロップは最後に上下左右から margin ぶんだけ取り除く。
+    /// これによりマージンを変えても HUD の絶対サイズ・位置は変わらない。
     func compose(camera: CVPixelBuffer?, hud: CVPixelBuffer?) -> CIImage? {
         let cameraImage = camera.map { CIImage(cvPixelBuffer: $0) }
         let hudImage = hud.map { CIImage(cvPixelBuffer: $0) }
@@ -39,13 +56,44 @@ final class Compositor {
         guard let cameraImage else { return hudImage }
         guard let hudImage else { return cameraImage }
 
-        let output = cameraImage.extent
-        let padded = layout(hud: styled(hudImage), in: output)
+        let fullFrame = cameraImage.extent
+        lastFullFrameSize = fullFrame.size
+        let padded = layout(hud: styled(hudImage), in: fullFrame)
 
         let blend = CIFilter.screenBlendMode()
         blend.inputImage = padded
         blend.backgroundImage = dimmed(cameraImage, under: padded)
-        return blend.outputImage?.cropped(to: output) ?? cameraImage
+        guard let composed = blend.outputImage?.cropped(to: fullFrame) else { return cameraImage }
+
+        return cropped(
+            composed, top: topMargin, bottom: bottomMargin, side: sideMargin)
+    }
+
+    /// 上下左右から margin (フルサイズに対する割合、それぞれ 0…0.9) だけ取り除く。
+    /// マージンが全て 0 でも、偶数丸めと原点正規化のために必ず通す
+    /// (録画側は Compositor が返す座標系をそのまま信頼するので、ここで一本化しておく)。
+    private func cropped(_ image: CIImage, top: Double, bottom: Double, side: Double) -> CIImage {
+        let topInset = image.extent.height * min(max(top, 0), 0.9)
+        let bottomInset = image.extent.height * min(max(bottom, 0), 0.9)
+        let sideInset = image.extent.width * min(max(side, 0), 0.9)
+
+        let minY = image.extent.minY + bottomInset
+        let maxY = image.extent.maxY - topInset
+        let minX = image.extent.minX + sideInset
+        let maxX = image.extent.maxX - sideInset
+        guard maxY > minY, maxX > minX else { return image }
+
+        // H.264 は奇数の幅/高さを受け付けない (エンコード時に無音でサイズがズレる)。
+        // 端数を切り捨てて偶数に丸める。録画側の AVVideoWidthKey/HeightKey もこれを見るので必ず一致する。
+        let width = ((maxX - minX) / 2).rounded(.down) * 2
+        let height = ((maxY - minY) / 2).rounded(.down) * 2
+        let rect = CGRect(x: minX, y: minY, width: width, height: height)
+        lastCropOrigin = rect.origin
+
+        // cropped(to:) は extent を狭めるだけで原点は変わらない。原点が (0,0) のままだと
+        // 期待した位置とみなす消費側 (Recorder.append の CVPixelBuffer 書き込みなど) がずれるので、
+        // ここで (0,0) 起点に正規化しておく。
+        return image.cropped(to: rect).transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
     }
 
     /// HUD の輝度をマスクにして、その場所の背景を暗くする。

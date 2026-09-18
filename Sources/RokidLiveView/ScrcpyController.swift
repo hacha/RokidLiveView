@@ -65,6 +65,11 @@ final class ScrcpyController: ObservableObject {
         launch(.camera)
     }
 
+    /// WindowMover が AX でウィンドウを掴むために使う。
+    func processIdentifier(for kind: Kind) -> pid_t? {
+        processes[kind]?.processIdentifier
+    }
+
     func stop() {
         stopping = true
         isRunning = false
@@ -121,26 +126,6 @@ final class ScrcpyController: ObservableObject {
             self.launch(kind)
             guard self.processes[kind] != nil else { return }
             self.onRelaunch?(kind)
-        }
-    }
-
-    /// 録画用の音声だけを取る scrcpy。映像もウィンドウも持たない。
-    static func startAudioRecorder(to url: URL) -> Process? {
-        let arguments = [
-            "-s", Config.serial,
-            "--no-video",
-            "--no-control",
-            "--audio-source=mic",
-            // scrcpy の既定は opus。mp4 に入れると QuickTime で再生できないので aac にする
-            "--audio-codec=aac",
-            "--record=\(url.path)",
-        ]
-        let process = makeProcessStatic(arguments: arguments)
-        do {
-            try process.run()
-            return process
-        } catch {
-            return nil
         }
     }
 

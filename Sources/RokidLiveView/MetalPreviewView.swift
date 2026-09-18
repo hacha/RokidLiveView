@@ -48,8 +48,9 @@ struct MetalPreviewView: NSViewRepresentable {
             if let image = MainActor.assumeIsolated({ engine.currentImage() }) {
                 // 録画は合成結果をそのまま (プレビューの拡縮を掛ける前に) 記録する
                 engine.recorder.append(image: image, using: compositor)
+                let fullSize = compositor.lastFullFrameSize ?? image.extent.size
                 compositor.ciContext.render(
-                    fitted(image, into: target),
+                    fitted(image, into: target, fullFrameSize: fullSize, cropOrigin: compositor.lastCropOrigin),
                     to: drawable.texture,
                     commandBuffer: commandBuffer,
                     bounds: target,
@@ -69,15 +70,26 @@ struct MetalPreviewView: NSViewRepresentable {
             commandBuffer.commit()
         }
 
-        /// アスペクト比を保ってビューに収め、余白は黒で埋める (黒帯の描き残しを防ぐ)
-        private func fitted(_ image: CIImage, into target: CGRect) -> CIImage {
-            guard image.extent.width > 0, image.extent.height > 0 else { return image }
-            let scale = min(target.width / image.extent.width, target.height / image.extent.height)
+        /// フル (クロップ前) フレームがビューに収まるスケールを基準に描く。
+        /// image 自体がクロップ済みで小さくても同じスケールを使うので、
+        /// Full/Crop を切り替えても拡大縮小されず、切り取られた位置もそのまま保たれる
+        /// (crop で見えなくなった部分は黒帯として残るだけ)。
+        private func fitted(
+            _ image: CIImage, into target: CGRect, fullFrameSize: CGSize, cropOrigin: CGPoint
+        ) -> CIImage {
+            guard fullFrameSize.width > 0, fullFrameSize.height > 0 else { return image }
+            let scale = min(target.width / fullFrameSize.width, target.height / fullFrameSize.height)
+
+            // フルフレームをビュー中央に置いたときの左下隅の位置
+            let fullOriginX = target.midX - fullFrameSize.width * scale / 2
+            let fullOriginY = target.midY - fullFrameSize.height * scale / 2
+
             let scaled = image.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
-            let offsetX = target.midX - scaled.extent.midX
-            let offsetY = target.midY - scaled.extent.midY
-            let centered = scaled.transformed(by: CGAffineTransform(translationX: offsetX, y: offsetY))
-            return centered.composited(over: CIImage(color: .black).cropped(to: target))
+            let placed = scaled.transformed(by: CGAffineTransform(
+                translationX: fullOriginX + cropOrigin.x * scale - scaled.extent.minX,
+                y: fullOriginY + cropOrigin.y * scale - scaled.extent.minY
+            ))
+            return placed.composited(over: CIImage(color: .black).cropped(to: target))
         }
     }
 }

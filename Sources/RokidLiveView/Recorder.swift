@@ -7,11 +7,12 @@ import Foundation
 
 /// 画面に出ている合成映像をそのまま mp4 に保存する。
 ///
-/// 音声はグラスのマイクを scrcpy の 3 本目 (--no-video --audio-source=mic) で別録りし、
-/// 停止時に ffmpeg で多重化する。ライブ表示側の scrcpy は --no-audio のまま
-/// (スピーカーに出すとハウリングと遅延の原因になるため)。
+/// 音声はグラスのマイクではなく、この Mac 自身のマイク入力を AVCaptureSession で拾い、
+/// 映像と同じ AVAssetWriter に音声トラックとして直接書き込む
+/// (グラス側のマイクは adb/scrcpy 経由だと OS のプライバシーポリシーで常に無音化されるため使えない)。
+/// ライブ表示側の scrcpy は --no-audio のまま (スピーカーに出すとハウリングと遅延の原因になるため)。
 @MainActor
-final class Recorder: ObservableObject {
+final class Recorder: NSObject, ObservableObject {
     @Published private(set) var isRecording = false
     @Published private(set) var elapsed: TimeInterval = 0
     @Published private(set) var lastOutput: URL?
@@ -28,15 +29,16 @@ final class Recorder: ObservableObject {
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var adaptor: AVAssetWriterInputPixelBufferAdaptor?
-    private var audioProcess: Process?
+    private var audioInput: AVAssetWriterInput?
+    private var captureSession: AVCaptureSession?
+    private let audioQueue = DispatchQueue(label: "com.hacha.rokidliveview.audio")
     private var videoURL: URL?
-    private var audioURL: URL?
     private var timer: Timer?
 
     /// 次に書き込むフレーム番号 (PTS = frameIndex / frameRate)
     private var frameIndex: Int64 = 0
-    /// 最初の映像フレームを書いた実時刻。音声とのズレ補正に使う
-    private var videoStartDate: Date?
+    /// 最初の映像フレームを書いた実時刻 (ホストクロック)。音声 PTS をこれ基準に詰め直す
+    private var videoStartHostTime: CMTime?
 
     func start(size: CGSize) {
         guard !isRecording else { return }
@@ -54,22 +56,24 @@ final class Recorder: ObservableObject {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let stamp = formatter.string(from: Date())
         let video = directory.appendingPathComponent("live-\(stamp).mp4")
-        let audio = directory.appendingPathComponent("live-\(stamp).m4a")
 
         do {
             let writer = try AVAssetWriter(outputURL: video, fileType: .mp4)
+            // 偶数丸めは Compositor.compose() が常に行うので、ここではその結果 (size) をそのまま使う。
+            let width = Int(size.width)
+            let height = Int(size.height)
             let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
-                AVVideoWidthKey: Int(size.width),
-                AVVideoHeightKey: Int(size.height),
+                AVVideoWidthKey: width,
+                AVVideoHeightKey: height,
             ])
             input.expectsMediaDataInRealTime = true
             let adaptor = AVAssetWriterInputPixelBufferAdaptor(
                 assetWriterInput: input,
                 sourcePixelBufferAttributes: [
                     kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-                    kCVPixelBufferWidthKey as String: Int(size.width),
-                    kCVPixelBufferHeightKey as String: Int(size.height),
+                    kCVPixelBufferWidthKey as String: width,
+                    kCVPixelBufferHeightKey as String: height,
                 ]
             )
             guard writer.canAdd(input) else {
@@ -77,6 +81,19 @@ final class Recorder: ObservableObject {
                 return
             }
             writer.add(input)
+
+            let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVNumberOfChannelsKey: 1,
+                AVSampleRateKey: 44100,
+            ])
+            audioInput.expectsMediaDataInRealTime = true
+            guard writer.canAdd(audioInput) else {
+                lastError = "AVAssetWriter rejected the audio input"
+                return
+            }
+            writer.add(audioInput)
+
             guard writer.startWriting() else {
                 lastError = "Cannot start recording: \(writer.error?.localizedDescription ?? "unknown")"
                 return
@@ -86,20 +103,16 @@ final class Recorder: ObservableObject {
             self.writer = writer
             self.input = input
             self.adaptor = adaptor
+            self.audioInput = audioInput
             self.videoURL = video
-            self.audioURL = audio
             self.frameIndex = 0
-            self.videoStartDate = nil
+            self.videoStartHostTime = nil
         } catch {
             lastError = "Cannot start recording: \(error.localizedDescription)"
             return
         }
 
-        audioProcess = ScrcpyController.startAudioRecorder(to: audio)
-        if audioProcess == nil {
-            // 音声だけ落ちても映像は録り続ける
-            lastError = "Could not start audio capture; recording video only"
-        }
+        startMicCapture()
 
         isRecording = true
         elapsed = 0
@@ -109,17 +122,71 @@ final class Recorder: ObservableObject {
         }
     }
 
+    /// この Mac のマイク (システム標準の入力デバイス) を拾う AVCaptureSession を立てる。
+    /// 権限が無い/デバイスが無い場合は映像だけで録り続ける (グラス側マイクと同じフェイルソフト方針)。
+    private func startMicCapture() {
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            setUpMicCapture()
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .audio) { [weak self] granted in
+                Task { @MainActor in
+                    guard let self, self.isRecording || self.writer != nil else { return }
+                    if granted {
+                        self.setUpMicCapture()
+                    } else {
+                        self.lastError = "Microphone access denied; recording video only"
+                    }
+                }
+            }
+        default:
+            lastError = "Microphone access denied; recording video only"
+        }
+    }
+
+    private func setUpMicCapture() {
+        guard let device = AVCaptureDevice.default(for: .audio) else {
+            lastError = "No microphone found; recording video only"
+            return
+        }
+
+        let session = AVCaptureSession()
+        do {
+            let deviceInput = try AVCaptureDeviceInput(device: device)
+            guard session.canAddInput(deviceInput) else {
+                lastError = "Could not use the microphone; recording video only"
+                return
+            }
+            session.addInput(deviceInput)
+
+            let output = AVCaptureAudioDataOutput()
+            output.setSampleBufferDelegate(self, queue: audioQueue)
+            guard session.canAddOutput(output) else {
+                lastError = "Could not use the microphone; recording video only"
+                return
+            }
+            session.addOutput(output)
+        } catch {
+            lastError = "Could not use the microphone: \(error.localizedDescription)"
+            return
+        }
+
+        captureSession = session
+        session.startRunning()
+    }
+
     /// 描画ループ (60fps) から毎回呼ばれる。録画中で、かつ次のフレーム時刻に達したときだけ書く。
     nonisolated func append(image: CIImage, using compositor: Compositor) {
         MainActor.assumeIsolated {
             guard isRecording, let adaptor, let input, input.isReadyForMoreMediaData else { return }
 
-            let now = Date()
-            if videoStartDate == nil { videoStartDate = now }
-            guard let videoStartDate else { return }
+            let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
+            if videoStartHostTime == nil { videoStartHostTime = hostTime }
+            guard let videoStartHostTime else { return }
 
-            // 実時間から求めた「あるべきフレーム番号」に追いつくまで書かない = 固定 30fps CFR
-            let due = Int64(now.timeIntervalSince(videoStartDate) * Double(Self.frameRate))
+            // ホストクロックから求めた「あるべきフレーム番号」に追いつくまで書かない = 固定 30fps CFR
+            let elapsedSeconds = CMTimeGetSeconds(CMTimeSubtract(hostTime, videoStartHostTime))
+            let due = Int64(elapsedSeconds * Double(Self.frameRate))
             guard due >= frameIndex, let pool = adaptor.pixelBufferPool else { return }
 
             var buffer: CVPixelBuffer?
@@ -128,7 +195,41 @@ final class Recorder: ObservableObject {
 
             compositor.ciContext.render(image, to: buffer, bounds: image.extent, colorSpace: compositor.colorSpace)
             adaptor.append(buffer, withPresentationTime: CMTime(value: frameIndex, timescale: Self.frameRate))
-            frameIndex += 1
+            // 描画が間に合わず due が先行していたら、そこまで一気に追いつく (フレーム番号が現実の遅れに固定されるのを防ぐ)
+            frameIndex = due + 1
+        }
+    }
+
+    /// マイクの音声バッファ。ホストクロックの PTS を、映像と同じセッション原点 (最初の映像フレームの時刻) 基準に詰め直して書く。
+    ///
+    /// `AVCaptureAudioDataOutput` のデリゲートは専用の `audioQueue` から呼ばれる (メインスレッドではない) ので
+    /// `append(image:)` と違って `MainActor.assumeIsolated` は使えない (呼ぶとアサーション違反で落ちる)。
+    @objc nonisolated func captureOutput(
+        _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection
+    ) {
+        Task { @MainActor in
+            guard isRecording, let audioInput, audioInput.isReadyForMoreMediaData,
+                  let videoStartHostTime else { return }
+
+            let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+            let rebased = CMTimeSubtract(pts, videoStartHostTime)
+            guard rebased >= .zero else { return }
+
+            var timing = CMSampleTimingInfo(
+                duration: CMSampleBufferGetDuration(sampleBuffer),
+                presentationTimeStamp: rebased,
+                decodeTimeStamp: .invalid
+            )
+            var rebasedBuffer: CMSampleBuffer?
+            let status = CMSampleBufferCreateCopyWithNewTiming(
+                allocator: kCFAllocatorDefault,
+                sampleBuffer: sampleBuffer,
+                sampleTimingEntryCount: 1,
+                sampleTimingArray: &timing,
+                sampleBufferOut: &rebasedBuffer
+            )
+            guard status == noErr, let rebasedBuffer else { return }
+            audioInput.append(rebasedBuffer)
         }
     }
 
@@ -138,31 +239,23 @@ final class Recorder: ObservableObject {
         timer?.invalidate()
         timer = nil
 
-        // scrcpy は SIGTERM で録画を確定して正常終了する
-        audioProcess?.terminate()
-        let audioProcess = self.audioProcess
-        self.audioProcess = nil
+        captureSession?.stopRunning()
+        captureSession = nil
 
         input?.markAsFinished()
+        audioInput?.markAsFinished()
         let writer = self.writer
         let video = videoURL
-        let audio = audioURL
-        let videoStart = videoStartDate
         self.writer = nil
         self.input = nil
         self.adaptor = nil
+        self.audioInput = nil
 
         writer?.finishWriting { [weak self] in
-            audioProcess?.waitUntilExit()
-            let merged = Self.mux(video: video, audio: audio, videoStart: videoStart)
             Task { @MainActor in
                 guard let self else { return }
-                let output = merged ?? video
-                self.lastOutput = output
-                if merged == nil, audio != nil {
-                    self.lastError = "Muxing the audio failed; saved video only"
-                }
-                if self.revealsOutputOnStop { Self.reveal(output) }
+                self.lastOutput = video
+                if self.revealsOutputOnStop { Self.reveal(video) }
             }
         }
     }
@@ -175,48 +268,6 @@ final class Recorder: ObservableObject {
             NSWorkspace.shared.open(Config.outputDirectory)
         }
     }
-
-    /// 映像 mp4 と音声 m4a を再エンコードなしで 1 本にまとめる。失敗したら nil (映像は残す)。
-    ///
-    /// 音声側の scrcpy は起動に 1 秒前後かかるので、そのぶん音声の先頭が遅れて始まる。
-    /// オフライン合成が birthtime で頭を揃えるのと同じ考え方で、
-    /// 音声ファイルの作成時刻と映像の開始時刻の差を -itsoffset で補正する。
-    private nonisolated static func mux(video: URL?, audio: URL?, videoStart: Date?) -> URL? {
-        guard let video, let audio,
-              FileManager.default.fileExists(atPath: audio.path),
-              FileManager.default.isExecutableFile(atPath: Config.ffmpegPath) else { return nil }
-
-        var offset = 0.0
-        if let videoStart,
-           let attributes = try? FileManager.default.attributesOfItem(atPath: audio.path),
-           let audioStart = attributes[.creationDate] as? Date {
-            offset = audioStart.timeIntervalSince(videoStart)
-        }
-
-        let merged = video.deletingPathExtension().appendingPathExtension("av.mp4")
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: Config.ffmpegPath)
-        process.arguments = [
-            "-y",
-            "-i", video.path,
-            "-itsoffset", String(format: "%.3f", offset), "-i", audio.path,
-            "-map", "0:v", "-map", "1:a",
-            "-c", "copy", "-shortest", merged.path,
-        ]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-            process.waitUntilExit()
-        } catch {
-            return nil
-        }
-        guard process.terminationStatus == 0,
-              let size = try? FileManager.default.attributesOfItem(atPath: merged.path)[.size] as? Int,
-              size > 0 else { return nil }
-
-        try? FileManager.default.removeItem(at: video)
-        try? FileManager.default.removeItem(at: audio)
-        return merged
-    }
 }
+
+extension Recorder: AVCaptureAudioDataOutputSampleBufferDelegate {}
